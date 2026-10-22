@@ -4,6 +4,7 @@ import easyocr as __easyocr
 import numpy as __np
 from PIL import Image as __Image, ImageOps as __ImageOps
 import io
+import re
 
 # Configuración inicial de la página
 __st.set_page_config(
@@ -64,6 +65,22 @@ def __variantes_patente(__patente: str):
                 __variantes.append(__corregida)
     return __variantes
 
+# Busca la patente en los textos del OCR, aunque venga separada en varios trozos (ej: "VHGZ" y "72")
+def __extraer_patente(__resultados):
+    # Dejar solo letras y números (quita espacios, guiones y puntos) y descartar la palabra CHILE
+    __limpio = lambda __t: "".join(__c for __c in __t.upper() if __c.isalnum())
+    __trozos = [__r for __r in __resultados if __limpio(__r[1]) not in ("", "CHILE")]
+    # Ordenar de izquierda a derecha y unir todos los textos
+    __trozos.sort(key=lambda __r: __r[0][0][0])
+    __unido = "".join(__limpio(__r[1]) for __r in __trozos)
+    # Recorrer el texto unido buscando 6 caracteres con formato de patente
+    for __i in range(len(__unido) - 5):
+        for __variante in __variantes_patente(__unido[__i:__i + 6]):
+            if re.fullmatch(r"[A-Z]{4}[0-9]{2}|[A-Z]{2}[0-9]{4}", __variante):
+                return __unido[__i:__i + 6]
+    # Si no hay formato de patente, usar el texto con mayor confianza
+    return __limpio(max(__resultados, key=lambda x: x[2])[1])
+
 # --- SECCIÓN 1: CAPTURA Y OCR ---
 __st.subheader("1. Captura de Placa Patente")
 # En iPhone, "Subir foto" permite usar la cámara trasera en resolución completa
@@ -87,8 +104,7 @@ if __imagen_capturada is not None:
         __resultados = __reader.readtext(__imagen_np)
         
     if __resultados:
-        # Dejar solo letras y números (quita espacios, guiones y puntos)
-        __patente_detectada = "".join(__c for __c in max(__resultados, key=lambda x: x[2])[1].upper() if __c.isalnum())
+        __patente_detectada = __extraer_patente(__resultados)
         __st.success(f"Patente detectada por OCR: **{__patente_detectada}**")
     else:
         __st.warning("No se logró detectar texto en la imagen. Ingrese la patente manualmente.")
