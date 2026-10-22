@@ -2,7 +2,7 @@ import streamlit as __st
 from supabase import create_client as __create_client, Client as __Client
 import easyocr as __easyocr
 import numpy as __np
-from PIL import Image as __Image
+from PIL import Image as __Image, ImageOps as __ImageOps
 import io
 
 # Configuración inicial de la página
@@ -47,22 +47,48 @@ def __consultar_vehiculo(__patente: str):
         __st.error(f"Error al consultar la base de datos: {__e}")
         return None
 
+# Confusiones típicas del OCR entre letras y números
+__A_LETRA = {"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "8": "B"}
+__A_NUMERO = {"O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "Z": "2", "A": "4", "S": "5", "G": "6", "B": "8"}
+
+# Genera variantes de la patente según el formato chileno: nuevo (LLLL00) y antiguo (LL0000)
+def __variantes_patente(__patente: str):
+    __variantes = [__patente]
+    if len(__patente) == 6:
+        for __letras in (4, 2):
+            __corregida = "".join(
+                __A_LETRA.get(__c, __c) if __i < __letras else __A_NUMERO.get(__c, __c)
+                for __i, __c in enumerate(__patente)
+            )
+            if __corregida not in __variantes:
+                __variantes.append(__corregida)
+    return __variantes
+
 # --- SECCIÓN 1: CAPTURA Y OCR ---
 __st.subheader("1. Captura de Placa Patente")
-__imagen_capturada = __st.camera_input("Fotografiar patente del vehículo")
+# En iPhone, "Subir foto" permite usar la cámara trasera en resolución completa
+__origen = __st.radio("Origen de la imagen:", ["Cámara", "Subir foto"], horizontal=True)
+if __origen == "Cámara":
+    __imagen_capturada = __st.camera_input("Fotografiar patente del vehículo")
+else:
+    __imagen_capturada = __st.file_uploader("Tomar o subir foto de la patente", type=["jpg", "jpeg", "png"])
 
 __patente_detectada = ""
 
 if __imagen_capturada is not None:
     __bytes_imagen = __imagen_capturada.getvalue()
     __imagen_pil = __Image.open(io.BytesIO(__bytes_imagen))
+    # Respetar la orientación de las fotos del celular y reducir el tamaño para acelerar el OCR
+    __imagen_pil = __ImageOps.exif_transpose(__imagen_pil).convert("RGB")
+    __imagen_pil.thumbnail((1600, 1600))
     __imagen_np = __np.array(__imagen_pil)
     
     with __st.spinner("Procesando imagen con OCR..."):
         __resultados = __reader.readtext(__imagen_np)
         
     if __resultados:
-        __patente_detectada = max(__resultados, key=lambda x: x[2])[1].upper().replace(" ", "").replace("-", "")
+        # Dejar solo letras y números (quita espacios, guiones y puntos)
+        __patente_detectada = "".join(__c for __c in max(__resultados, key=lambda x: x[2])[1].upper() if __c.isalnum())
         __st.success(f"Patente detectada por OCR: **{__patente_detectada}**")
     else:
         __st.warning("No se logró detectar texto en la imagen. Ingrese la patente manualmente.")
@@ -75,9 +101,18 @@ __st.subheader("2. Verificación de Datos Vehiculares")
 __patente_busqueda = __st.text_input("Confirmar o ingresar patente:", value=__patente_detectada)
 
 if __patente_busqueda.strip():
-    __patente_limpia = __patente_busqueda.strip().upper()
-    __vehiculo_info = __consultar_vehiculo(__patente_limpia)
-    
+    __patente_limpia = "".join(__c for __c in __patente_busqueda.upper() if __c.isalnum())
+
+    # Probar la lectura original y sus variantes corregidas hasta encontrar el vehículo
+    __vehiculo_info = None
+    for __variante in __variantes_patente(__patente_limpia):
+        __vehiculo_info = __consultar_vehiculo(__variante)
+        if __vehiculo_info:
+            if __variante != __patente_limpia:
+                __st.info(f"Lectura corregida: {__patente_limpia} → **{__variante}**")
+            __patente_limpia = __variante
+            break
+
     if __vehiculo_info:
         # Mostrar información detallada del vehículo
         if __vehiculo_info["autorizado"]:

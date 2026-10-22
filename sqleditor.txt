@@ -31,4 +31,5 @@ insert into public.vehiculos (patente, marca, modelo, color, propietario, unidad
 values 
     ('BBCL12', 'Toyota', 'Hilux', 'Blanco', 'Capitán Juan Pérez', 'Compañía de Ingenieros', true),
     ('GGWP99', 'Chevrolet', 'D-Max', 'Gris', 'Teniente María Silva', 'Batallón Logístico', true),
-    ('XXYY00', 'Hyundai', 'Accent', 'Negro', 'Pedro Morales (Civil)', 'Proveedor Externo', false);
+    ('XXYY00', 'Hyundai', 'Accent', 'Negro', 'Pedro Morales (Civil)', 'Proveedor Externo', false),
+    ('VHGZ72', 'Hyundai', 'Kona', 'Verde', 'Tte P.Gatica F.', 'Oficial', true);
